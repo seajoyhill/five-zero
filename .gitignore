@@ -1,0 +1,13 @@
+# 构建产物
+cpp/build/
+
+# 下载的第三方依赖（make setup 自动获取）
+cpp/httplib.h
+cpp/json.hpp
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
