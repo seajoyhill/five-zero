@@ -3,46 +3,77 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>五子棋</title>
+  <title>棋类游戏</title>
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
 
   <div class="app-container">
     <header class="header">
-      <h1>五子棋</h1>
-      <p class="subtitle">Gomoku</p>
+      <h1 id="app-title">五子棋</h1>
+      <p id="app-subtitle" class="subtitle">Gomoku</p>
     </header>
 
-    <div class="info-bar">
-      <span id="game-status" class="status-text">点击「新游戏」开始</span>
-      <span class="mode-badge">
-        模式：<span id="mode-indicator">人机对战</span>
-        <span class="ai-badge"> | AI：<span id="ai-type-indicator"></span></span>
-      </span>
-    </div>
+    <nav class="game-selector" aria-label="选择游戏">
+      <button id="btn-game-gomoku" class="game-tab active" type="button">五子棋</button>
+      <button id="btn-game-tictactoe" class="game-tab" type="button">井字棋</button>
+    </nav>
 
-    <div class="board-wrapper">
-      <canvas id="board-canvas"></canvas>
-    </div>
+    <main>
+      <section id="gomoku-view" class="game-view" aria-label="五子棋">
+        <div class="info-bar">
+          <span id="game-status" class="status-text">点击「新游戏」开始</span>
+          <span class="mode-badge">
+            模式：<span id="mode-indicator">人机对战</span>
+            <span class="ai-badge"> | AI：<span id="ai-type-indicator"></span></span>
+          </span>
+        </div>
 
-    <div class="controls">
-      <button id="btn-new-game" class="btn btn-primary">新游戏</button>
-      <button id="btn-switch-mode" class="btn btn-secondary">切换模式</button>
-      <button id="btn-switch-ai" class="btn btn-secondary">切换 AI</button>
-    </div>
+        <div class="board-wrapper">
+          <canvas id="board-canvas" aria-label="五子棋棋盘"></canvas>
+        </div>
 
-    <footer class="footer">
-      <p>黑方先手 · 五子连珠获胜</p>
-    </footer>
+        <div class="controls">
+          <button id="btn-new-game" class="btn btn-primary" type="button">新游戏</button>
+          <button id="btn-switch-mode" class="btn btn-secondary" type="button">切换模式</button>
+          <button id="btn-switch-ai" class="btn btn-secondary" type="button">切换 AI</button>
+        </div>
+
+        <footer class="footer">
+          <p>黑方先手 · 五子连珠获胜</p>
+        </footer>
+      </section>
+
+      <section id="tictactoe-view" class="game-view hidden" aria-label="井字棋" aria-hidden="true">
+        <div class="info-bar ttt-info-bar">
+          <span id="ttt-status" class="status-text">点击「新游戏」开始</span>
+          <span class="mode-badge">
+            模式：<span id="ttt-mode-indicator">人机对战</span>
+            <span class="ai-badge"> | AI：<span id="ttt-ai-indicator">完美策略</span></span>
+          </span>
+        </div>
+
+        <div id="ttt-board" class="ttt-board" role="grid" aria-label="井字棋棋盘"></div>
+
+        <div class="controls">
+          <button id="ttt-new-game" class="btn btn-primary" type="button">新游戏</button>
+          <button id="ttt-switch-mode" class="btn btn-secondary" type="button">切换模式</button>
+        </div>
+
+        <footer class="footer">
+          <p>X 先手 · 横、竖、斜线连成三子获胜</p>
+        </footer>
+      </section>
+    </main>
   </div>
 
-  <!-- JS 加载顺序：board → ai → remote_ai → game → main -->
+  <!-- JS 加载顺序：五子棋模块 → 井字棋模块 -->
   <script src="js/board.js"></script>
   <script src="js/ai.js"></script>
   <script src="js/remote_ai.js"></script>
   <script src="js/game.js"></script>
   <script src="js/main.js"></script>
+  <script src="js/tic_tac_toe.js"></script>
 
 </body>
 </html>

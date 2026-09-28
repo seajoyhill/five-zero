@@ -146,3 +146,99 @@ body {
   .controls { flex-direction: column; width: 100%; }
   .btn { width: 100%; text-align: center; }
 }
+
+/* ── Game selector & shared views ──────────────────── */
+main { width: 100%; }
+.hidden { display: none !important; }
+.game-selector {
+  display: flex;
+  gap: 8px;
+  padding: 4px;
+  border: 1px solid #444;
+  border-radius: 10px;
+  background: #252525;
+}
+.game-tab {
+  border: 0;
+  border-radius: 7px;
+  padding: 8px 24px;
+  background: transparent;
+  color: #999;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, transform 0.1s;
+}
+.game-tab:hover { color: #eee; }
+.game-tab:active { transform: scale(0.97); }
+.game-tab.active {
+  color: #2c2c2c;
+  background: #f0d78c;
+}
+.game-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ── Tic-Tac-Toe ───────────────────────────────────── */
+.ttt-info-bar { max-width: 440px; }
+.ttt-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(80px, 132px));
+  grid-template-rows: repeat(3, minmax(80px, 132px));
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: #191919;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.ttt-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+  background: #3b3b3b;
+  color: #eee;
+  font-family: Arial, sans-serif;
+  font-size: clamp(3rem, 10vw, 5.5rem);
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s, color 0.15s;
+}
+.ttt-cell:not(:disabled):hover {
+  background: #505050;
+  transform: scale(1.025);
+}
+.ttt-cell:disabled { cursor: default; }
+.ttt-cell.mark-x { color: #f0d78c; }
+.ttt-cell.mark-o { color: #9fd3ff; }
+.ttt-cell.winning {
+  background: #615832;
+  box-shadow: inset 0 0 0 3px #f0d78c;
+  animation: winning-cell 0.8s ease-in-out infinite alternate;
+}
+@keyframes winning-cell {
+  from { filter: brightness(0.95); }
+  to { filter: brightness(1.25); }
+}
+.status-text.turn-x { color: #2c2c2c; background: #f0d78c; }
+.status-text.turn-o { color: #123047; background: #9fd3ff; }
+
+@media (max-width: 500px) {
+  .game-selector { width: 100%; justify-content: center; }
+  .game-tab { flex: 1; padding: 8px 12px; }
+  .game-view { gap: 10px; }
+  .ttt-board {
+    width: min(90vw, 390px);
+    height: min(90vw, 390px);
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+  }
+  .ttt-cell { font-size: clamp(2.8rem, 18vw, 5rem); }
+}
