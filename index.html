@@ -37,6 +37,15 @@
           <button id="btn-new-game" class="btn btn-primary" type="button">新游戏</button>
           <button id="btn-switch-mode" class="btn btn-secondary" type="button">切换模式</button>
           <button id="btn-switch-ai" class="btn btn-secondary" type="button">切换 AI</button>
+          <label class="strength-control" for="ai-strength-select">
+            强度
+            <select id="ai-strength-select">
+              <option value="easy">入门（约 0.25 秒）</option>
+              <option value="balanced" selected>标准（约 0.8 秒）</option>
+              <option value="strong">强力（约 1.8 秒）</option>
+              <option value="expert">大师（约 4 秒）</option>
+            </select>
+          </label>
         </div>
 
         <footer class="footer">

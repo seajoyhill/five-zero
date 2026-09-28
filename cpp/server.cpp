@@ -10,10 +10,13 @@
 
 #include "gomoku_ai.h"
 #include "random_ai.h"
+#include "mcts_ai.h"
 #include "httplib.h"
 #include "json.hpp"
 
 #include <iostream>
+#include <algorithm>
+#include <vector>
 #include <string>
 #include <memory>
 #include <stdexcept>
@@ -21,9 +24,12 @@
 using json = nlohmann::json;
 
 // ── AI 工厂 ──────────────────────────────────────────────
-static std::unique_ptr<GomokuAI> createAI(const std::string& type) {
+static std::unique_ptr<GomokuAI> createAI(const std::string& type, int thinkTimeMs) {
     if (type == "random") {
         return std::make_unique<RandomAI>();
+    }
+    if (type == "mcts") {
+        return std::make_unique<MCTSAI>(thinkTimeMs);
     }
     throw std::runtime_error("Unknown AI type: " + type);
 }
@@ -43,19 +49,32 @@ static json handleMove(const json& body) {
 
     int size = body["size"].get<int>();
     int player = body["player"].get<int>();
+    if (size <= 0 || size > 30 || (player != 1 && player != 2)) {
+        return {{"error", "Invalid board size or player"}};
+    }
 
-    // 将 JSON 二维数组展平为一维
+    // 将 JSON 二维数组展平为一维，并校验棋盘尺寸。
+    if (body["board"].size() != static_cast<size_t>(size)) {
+        return {{"error", "Board row count does not match size"}};
+    }
     std::vector<int> flatBoard;
     flatBoard.reserve(size * size);
     for (const auto& row : body["board"]) {
+        if (!row.is_array() || row.size() != static_cast<size_t>(size)) {
+            return {{"error", "Board column count does not match size"}};
+        }
         for (const auto& cell : row) {
-            flatBoard.push_back(cell.get<int>());
+            const int value = cell.get<int>();
+            if (value < 0 || value > 2) return {{"error", "Invalid board cell"}};
+            flatBoard.push_back(value);
         }
     }
 
-    // 创建 AI 并获取落子
+    // 创建 AI 并获取落子。服务端也限制时长，避免请求占用无限资源。
     std::string aiType = body.value("aiType", "random");
-    auto ai = createAI(aiType);
+    const int requestedThinkTime = body.value("thinkTimeMs", 800);
+    const int thinkTimeMs = std::max(50, std::min(requestedThinkTime, 10000));
+    auto ai = createAI(aiType, thinkTimeMs);
     GomokuMove move = ai->getMove(flatBoard.data(), size, player);
 
     if (move.row < 0) {
@@ -107,7 +126,7 @@ int main(int argc, char* argv[]) {
     });
 
     std::cout << "五子棋 AI 服务已启动: http://localhost:" << port << std::endl;
-    std::cout << "  POST /api/move   — AI 落子" << std::endl;
+    std::cout << "  POST /api/move   — AI 落子（random / mcts）" << std::endl;
     std::cout << "  GET  /api/health — 健康检查" << std::endl;
 
     svr.listen("0.0.0.0", port);

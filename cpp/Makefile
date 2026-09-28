@@ -12,7 +12,7 @@ CXXFLAGS  := -std=c++17 -O2 -Wall
 
 BUILD_DIR := build
 TARGET    := $(BUILD_DIR)/gomoku_server
-SRCS      := server.cpp random_ai.cpp
+SRCS      := server.cpp random_ai.cpp mcts_ai.cpp
 OBJS      := $(SRCS:%.cpp=$(BUILD_DIR)/%.o)
 
 # header-only 依赖（下载到当前目录）
@@ -28,7 +28,7 @@ $(TARGET): $(OBJS) $(HTTPLIB_H) $(JSON_H) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -o $@ $(OBJS) -lpthread
 
 # ── 编译 ─────────────────────────────────────────────────
-$(BUILD_DIR)/%.o: %.cpp gomoku_ai.h random_ai.h $(HTTPLIB_H) $(JSON_H) | $(BUILD_DIR)
+$(BUILD_DIR)/%.o: %.cpp gomoku_ai.h random_ai.h mcts_ai.h $(HTTPLIB_H) $(JSON_H) | $(BUILD_DIR)
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
 $(BUILD_DIR):

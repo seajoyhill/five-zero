@@ -1,10 +1,10 @@
 # 五子棋与井字棋
 
-完整的网页版棋类小游戏：包含五子棋与井字棋，支持双人对战 / 人机对战。五子棋提供可扩展 AI 接口与 C++ 远程 AI 服务；井字棋内置 Minimax 不败 AI。
+完整的网页版棋类小游戏：包含五子棋与井字棋，支持双人对战 / 人机对战。五子棋内置本地蒙特卡洛树搜索（MCTS）AI，可调节思考时长；同时支持 C++ 远程 MCTS 服务。井字棋内置 Minimax 不败 AI。
 
 ## 快速开始
 
-### 纯前端（本地随机 AI）
+### 纯前端（本地 MCTS AI）
 
 直接用浏览器打开 `index.html`，再通过顶部标签切换五子棋或井字棋。
 
@@ -21,7 +21,7 @@ make setup   # 下载 header-only 依赖（只需一次）
 make         # 编译
 ./build/gomoku_server
 
-# 2. 浏览器打开 index.html，点击「切换 AI」选择「远程 C++」
+# 2. 浏览器打开 index.html，点击「切换 AI」选择「远程 C++ MCTS」
 open ../index.html
 ```
 
@@ -34,14 +34,15 @@ five-zero/
 │   └── style.css            # 样式
 ├── js/
 │   ├── board.js             # 棋盘数据模型 + 胜负判定（纯逻辑）
-│   ├── ai.js                # AI 棋手接口 + 随机 Mock 实现
-│   ├── remote_ai.js         # 远程 AI（HTTP → C++）
+│   ├── ai.js                # AI 接口、随机 AI、浏览器端 MCTS
+│   ├── remote_ai.js         # 远程 MCTS（HTTP → C++）
 │   ├── game.js              # 游戏控制器（回合管理、AI 调度、降级）
 │   ├── main.js              # 五子棋 Canvas 渲染 + 鼠标交互
 │   └── tic_tac_toe.js       # 井字棋逻辑、Minimax AI + UI
 ├── cpp/
 │   ├── gomoku_ai.h          # C++ 五子棋 AI 抽象基类
 │   ├── random_ai.h / .cpp   # 随机 AI 示例实现
+│   ├── mcts_ai.h / .cpp     # C++ 蒙特卡洛树搜索 AI
 │   ├── server.cpp           # HTTP 服务（cpp-httplib + nlohmann/json）
 │   └── Makefile             # 构建脚本
 └── README.md
@@ -53,9 +54,10 @@ five-zero/
 浏览器 (index.html)                    C++ HTTP Server (:8080)
 ┌────────────────────┐     POST        ┌──────────────────────┐
 │ AIPlayerFactory    │── /api/move ──►│ GomokuAI (抽象接口)  │
-│  ├─ RandomAIPlayer │   (JSON)       │  └─ RandomAI (实现)  │
-│  └─ RemoteAIPlayer │◄── {row,col} ──│                      │
-└────────────────────┘                 └──────────────────────┘
+│  ├─ MCTSAIPlayer   │   (JSON)       │  ├─ MCTSAI (实现)     │
+│  ├─ RandomAIPlayer │◄── {row,col} ──│  └─ RandomAI (实现)   │
+│  └─ RemoteAIPlayer │                 └──────────────────────┘
+└────────────────────┘
          │ 远程不可用时自动降级到本地 RandomAIPlayer
          ▼
    无感知继续游戏
@@ -71,7 +73,10 @@ five-zero/
   "board": [[0,0,1,...], ...],
   "size": 15,
   "player": 2,
-  "lastMove": { "row": 7, "col": 7 }
+  "lastMove": { "row": 7, "col": 7 },
+  "aiType": "mcts",
+  "aiStrength": "strong",
+  "thinkTimeMs": 1800
 }
 
 // Response 200
@@ -86,6 +91,21 @@ five-zero/
 ```json
 { "status": "ok" }
 ```
+
+## MCTS AI 与思考强度
+
+五子棋人机模式默认使用本地 MCTS。控制区的「强度」会影响每一步的搜索时间：
+
+| 档位 | 目标搜索时长 | 适用场景 |
+| --- | ---: | --- |
+| 入门 | 约 0.25 秒 | 快速试玩、移动设备 |
+| 标准 | 约 0.8 秒 | 默认设置 |
+| 强力 | 约 1.8 秒 | 更重视棋力 |
+| 大师 | 约 4 秒 | 允许更长思考时间 |
+
+点击「切换 AI」可以在「本地 MCTS → 本地随机 → 远程 C++ MCTS」之间切换。远程模式需要先启动 C++ 服务；服务不可用时会自动降级为本地随机 AI。
+
+MCTS 会优先处理立即获胜和必须防守的着法，并将搜索候选限制在已有棋子附近，以适配浏览器端的 15×15 棋盘。
 
 ## 如何用 C++ 编写自己的 AI
 
@@ -128,7 +148,8 @@ if (type == "myai") {
 - **黑方先行**，点击棋盘交叉点落子
 - 横、竖、对角任意方向**五子连珠**即获胜
 - 点击「切换模式」在双人对战 / 人机对战间切换
-- 点击「切换 AI」在本地随机 / 远程 C++ 间切换
+- 点击「切换 AI」在本地 MCTS / 本地随机 / 远程 C++ MCTS 间切换
+- 通过「强度」选择 AI 思考时间，强度越高允许的搜索时间越长
 - 鼠标悬停显示落子预览
 
 ### 井字棋

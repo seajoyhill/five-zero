@@ -15,6 +15,8 @@ const aiTypeEl = document.getElementById('ai-type-indicator');
 const btnNewGame = document.getElementById('btn-new-game');
 const btnSwitchMode = document.getElementById('btn-switch-mode');
 const btnSwitchAI = document.getElementById('btn-switch-ai');
+const aiStrengthSelect = document.getElementById('ai-strength-select');
+const strengthControl = aiStrengthSelect.closest('.strength-control');
 
 // ── 配置 ──────────────────────────────────────────────
 const BOARD_SIZE = 15;
@@ -50,7 +52,9 @@ function init() {
     updateAITypeLabel();  // 更新显示，标注已降级
   };
 
-  game.startGame(GameMode.PVE, 'random');
+  const savedStrength = localStorage.getItem('gomoku-ai-strength');
+  if (AI_THINKING_LEVELS[savedStrength]) aiStrengthSelect.value = savedStrength;
+  game.startGame(GameMode.PVE, 'mcts', aiStrengthSelect.value);
   updateModeLabel();
   updateAITypeLabel();
   drawBoard();
@@ -81,7 +85,7 @@ function bindEvents() {
   });
 
   btnNewGame.addEventListener('click', () => {
-    game.startGame(game.mode, game.aiType);
+    game.startGame(game.mode, game.aiType, aiStrengthSelect.value);
     hoverPos = null;
     updateModeLabel();
     updateAITypeLabel();
@@ -91,7 +95,7 @@ function bindEvents() {
 
   btnSwitchMode.addEventListener('click', () => {
     const newMode = game.mode === GameMode.PVE ? GameMode.PVP : GameMode.PVE;
-    game.startGame(newMode, game.aiType);
+    game.startGame(newMode, game.aiType, aiStrengthSelect.value);
     hoverPos = null;
     updateModeLabel();
     updateAITypeLabel();
@@ -101,12 +105,22 @@ function bindEvents() {
 
   btnSwitchAI.addEventListener('click', () => {
     if (game.mode !== GameMode.PVE) return;
-    const types = ['random', 'remote'];
+    const types = ['mcts', 'random', 'remote'];
     const idx = types.indexOf(game.aiType);
     const nextType = types[(idx + 1) % types.length];
-    game.startGame(GameMode.PVE, nextType);
+    game.startGame(GameMode.PVE, nextType, aiStrengthSelect.value);
     hoverPos = null;
     updateModeLabel();
+    updateAITypeLabel();
+    drawBoard();
+    updateStatus();
+  });
+
+  aiStrengthSelect.addEventListener('change', () => {
+    localStorage.setItem('gomoku-ai-strength', aiStrengthSelect.value);
+    if (game.mode !== GameMode.PVE) return;
+    game.startGame(GameMode.PVE, game.aiType, aiStrengthSelect.value);
+    hoverPos = null;
     updateAITypeLabel();
     drawBoard();
     updateStatus();
@@ -299,8 +313,13 @@ function updateStatus() {
       statusEl.className = '';
       break;
     case GameStatus.PLAYING:
-      statusEl.textContent = `轮到 ${game.getCurrentPlayerText()}`;
-      statusEl.className = game.currentPlayer === BLACK ? 'turn-black' : 'turn-white';
+      if (game.aiPlayer && game.currentPlayer === game.aiPlayer.playerColor) {
+        statusEl.textContent = 'AI 思考中…';
+        statusEl.className = 'turn-white';
+      } else {
+        statusEl.textContent = `轮到 ${game.getCurrentPlayerText()}`;
+        statusEl.className = game.currentPlayer === BLACK ? 'turn-black' : 'turn-white';
+      }
       break;
     case GameStatus.BLACK_WIN:
       statusEl.textContent = '黑方获胜！ 🎉';
@@ -325,15 +344,26 @@ function updateAITypeLabel() {
   if (game.mode !== GameMode.PVE) {
     aiTypeEl.textContent = '';
     btnSwitchAI.style.display = 'none';
+    strengthControl.style.display = 'none';
     return;
   }
   btnSwitchAI.style.display = '';
-  const labels = { random: '本地随机', remote: '远程 C++' };
+  strengthControl.style.display = '';
+  const level = AI_THINKING_LEVELS[game.aiStrength] || AI_THINKING_LEVELS.balanced;
+  aiStrengthSelect.value = game.aiStrength;
+  aiStrengthSelect.disabled = game.aiType === 'random';
+  const labels = {
+    mcts: `本地 MCTS · ${level.label}`,
+    random: '本地随机',
+    remote: `远程 C++ MCTS · ${level.label}`,
+  };
   aiTypeEl.textContent = labels[game.aiType] || game.aiType;
   if (game.aiType === 'remote') {
     aiTypeEl.title = `服务地址: ${RemoteAIPlayer.serverUrl}`;
   } else {
-    aiTypeEl.title = '';
+    aiTypeEl.title = game.aiType === 'mcts'
+      ? `搜索时长约 ${level.thinkTimeMs / 1000} 秒`
+      : '';
   }
 }
 
