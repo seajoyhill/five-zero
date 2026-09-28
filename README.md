@@ -34,7 +34,8 @@ five-zero/
 │   └── style.css            # 样式
 ├── js/
 │   ├── board.js             # 棋盘数据模型 + 胜负判定（纯逻辑）
-│   ├── ai.js                # AI 接口、随机 AI、浏览器端 MCTS
+│   ├── ai.js                # 通用 AI 接口、随机 AI、AI 工厂
+│   ├── mcts_ai.js              # 浏览器端蒙特卡洛树搜索 AI
 │   ├── remote_ai.js         # 远程 MCTS（HTTP → C++）
 │   ├── game.js              # 游戏控制器（回合管理、AI 调度、降级）
 │   ├── main.js              # 五子棋 Canvas 渲染 + 鼠标交互
@@ -165,8 +166,9 @@ if (type == "myai") {
 ```
 board.js  ← 纯数据层，无依赖
 ai.js     ← 无依赖
+mcts_ai.js   ← board.js + ai.js
 remote_ai.js ← ai.js
-game.js   ← board.js + ai.js
-main.js   ← board.js + game.js + ai.js
+game.js   ← board.js + ai.js + mcts_ai.js
+main.js   ← board.js + game.js + ai.js + mcts_ai.js
 tic_tac_toe.js ← 独立的井字棋逻辑与 UI
 ```
