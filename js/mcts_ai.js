@@ -156,6 +156,65 @@ function mctsImmediateMoves(board, size, moves, player) {
   return moves.filter(move => mctsIsWinningMove(board, size, move, player));
 }
 
+// 只检查与刚落下的棋子同线的空位；新出现的成五点必然经过这枚棋子。
+function mctsWinningRepliesNear(board, size, move, player) {
+  const winning = new Set();
+  for (const [dr, dc] of MCTS_SEARCH_DIRECTIONS) {
+    for (let offset = -4; offset <= 4; offset++) {
+      const row = move.row + dr * offset;
+      const col = move.col + dc * offset;
+      if (!mctsInside(size, row, col)) continue;
+      const index = mctsIndex(size, row, col);
+      if (board[index] === EMPTY && !winning.has(index) &&
+          mctsIsWinningMove(board, size, { row, col }, player)) {
+        winning.add(index);
+        if (winning.size === 2) return [...winning];
+      }
+    }
+  }
+  return [...winning];
+}
+
+// 对手一步之后若有两个不同的成五点，下一回合便无法同时拦住。
+function mctsDoubleThreatMoves(board, size, player) {
+  const moves = mctsCandidateMoves(board, size, player, size * size);
+  return moves.filter(move => {
+    const index = mctsIndex(size, move.row, move.col);
+    board[index] = player;
+    const doubleThreat = mctsWinningRepliesNear(board, size, move, player).length >= 2;
+    board[index] = EMPTY;
+    return doubleThreat;
+  });
+}
+
+function mctsMovesAvoidingDoubleThreats(board, size, moves, player, threats) {
+  const opponent = mctsOpponent(player);
+  return moves.filter(move => {
+    const index = mctsIndex(size, move.row, move.col);
+    board[index] = player;
+    const ownWinningReplies = mctsWinningRepliesNear(board, size, move, player);
+    let safe = true;
+
+    for (const threat of threats) {
+      const threatIndex = mctsIndex(size, threat.row, threat.col);
+      if (board[threatIndex] !== EMPTY) continue;
+      board[threatIndex] = opponent;
+      const opponentWon = mctsHasFive(board, size, threat.row, threat.col, opponent);
+      const doubleThreat = !opponentWon &&
+        mctsWinningRepliesNear(board, size, threat, opponent).length >= 2;
+      board[threatIndex] = EMPTY;
+      if (opponentWon || (doubleThreat &&
+          !ownWinningReplies.some(reply => reply !== threatIndex))) {
+        safe = false;
+        break;
+      }
+    }
+
+    board[index] = EMPTY;
+    return safe;
+  });
+}
+
 function mctsRandomChoice(items) {
   return items[Math.floor(Math.random() * items.length)];
 }
@@ -218,6 +277,22 @@ class MCTSAIPlayer extends AIPlayer {
     const blockingMoves = mctsImmediateMoves(board, size, rootMoves, opponent);
     if (blockingMoves.length > 0) return mctsRandomChoice(blockingMoves);
 
+    // 先排除允许对手下一步制造两个成五点的着法。
+    let searchMoves = rootMoves;
+    const doubleThreats = mctsDoubleThreatMoves(board, size, opponent);
+    if (doubleThreats.length > 0) {
+      let safeMoves = mctsMovesAvoidingDoubleThreats(
+        board, size, rootMoves, this.playerColor, doubleThreats,
+      );
+      if (safeMoves.length === 0) {
+        const allMoves = mctsCandidateMoves(board, size, this.playerColor, size * size);
+        safeMoves = mctsMovesAvoidingDoubleThreats(
+          board, size, allMoves.slice(rootMoves.length), this.playerColor, doubleThreats,
+        ).slice(0, this.settings.maxCandidates);
+      }
+      if (safeMoves.length > 0) searchMoves = safeMoves;
+    }
+
     const root = new MCTSNode({
       board,
       size,
@@ -225,6 +300,7 @@ class MCTSAIPlayer extends AIPlayer {
       rootPlayer: this.playerColor,
       maxCandidates: this.settings.maxCandidates,
     });
+    root.untriedMoves = searchMoves.slice();
     const deadline = performance.now() + Math.max(50, this.settings.thinkTimeMs);
     let iterations = 0;
 
@@ -274,7 +350,7 @@ class MCTSAIPlayer extends AIPlayer {
       }
     }
 
-    if (root.children.length === 0) return rootMoves[0] || null;
+    if (root.children.length === 0) return searchMoves[0] || null;
     root.children.sort((a, b) => b.visits - a.visits || b.wins - a.wins);
     return root.children[0].move;
   }
