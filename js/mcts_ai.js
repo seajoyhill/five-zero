@@ -37,6 +37,7 @@ const AI_THINKING_LEVELS = Object.freeze({
 const MCTS_SEARCH_DIRECTIONS = [
   [0, 1], [1, 0], [1, 1], [1, -1],
 ];
+const MCTS_PATTERN_ROLLOUT_PLIES = 4;
 
 function mctsOpponent(player) {
   return player === BLACK ? WHITE : BLACK;
@@ -84,11 +85,103 @@ function mctsCountEmpty(board) {
   return count;
 }
 
+const MCTS_CENTER_BIT = 1 << 5;
+const MCTS_FIVE_WINDOWS = [1, 2, 3, 4, 5].map(start => 31 << start);
+const MCTS_SIX_WINDOWS = [0, 1, 2, 3, 4, 5].map(start => ({
+  ends: (1 << start) | (1 << (start + 5)),
+  middle: 15 << (start + 1),
+}));
+const MCTS_PATTERN_CACHE = new Map();
+
+function mctsCappedBitCount(mask) {
+  if (mask === 0) return 0;
+  return (mask & (mask - 1)) === 0 ? 1 : 2;
+}
+
+function mctsLinePattern(stones, empty) {
+  const key = stones * 2048 + empty;
+  const cached = MCTS_PATTERN_CACHE.get(key);
+  if (cached) return cached;
+
+  let winning = false;
+  let winningReplies = 0;
+  let liveThreeExtensions = 0;
+  // 五格四子一空：下一手能成五；两个不同空位就是活四或双冲四。
+  for (const window of MCTS_FIVE_WINDOWS) {
+    if ((stones & window) === window) {
+      winning = true;
+    } else if (((stones | empty) & window) === window) {
+      const gap = empty & window;
+      if (gap !== 0 && (gap & (gap - 1)) === 0) winningReplies |= gap;
+    }
+  }
+
+  // 六格两端为空、中间三子一空：填入空位可形成活四。
+  for (const window of MCTS_SIX_WINDOWS) {
+    if ((empty & window.ends) !== window.ends ||
+        ((stones | empty) & window.middle) !== window.middle) continue;
+    const gap = empty & window.middle;
+    if (gap !== 0 && (gap & (gap - 1)) === 0) liveThreeExtensions |= gap;
+  }
+
+  const result = {
+    winning,
+    winningReplies: mctsCappedBitCount(winningReplies),
+    liveThreeExtensions: mctsCappedBitCount(liveThreeExtensions),
+  };
+  if (MCTS_PATTERN_CACHE.size < 32768) MCTS_PATTERN_CACHE.set(key, result);
+  return result;
+}
+
+// 同时评估这一点的进攻棋形，以及对手若下在此处会形成的威胁。
+function mctsMovePatterns(board, size, move, player) {
+  const attack = { winning: false, winningReplies: 0, liveThreeExtensions: 0 };
+  const defense = { winning: false, winningReplies: 0, liveThreeExtensions: 0 };
+
+  for (const [dr, dc] of MCTS_SEARCH_DIRECTIONS) {
+    let black = 0;
+    let white = 0;
+    let empty = 0;
+    for (let offset = -5; offset <= 5; offset++) {
+      const row = move.row + dr * offset;
+      const col = move.col + dc * offset;
+      if (!mctsInside(size, row, col)) continue;
+      const bit = 1 << (offset + 5);
+      const value = board[mctsIndex(size, row, col)];
+      if (value === BLACK) black |= bit;
+      else if (value === WHITE) white |= bit;
+      else if (offset !== 0) empty |= bit;
+    }
+
+    const own = player === BLACK ? black : white;
+    const opposing = player === BLACK ? white : black;
+    const ownPattern = mctsLinePattern(own | MCTS_CENTER_BIT, empty);
+    const opposingPattern = mctsLinePattern(opposing | MCTS_CENTER_BIT, empty);
+    attack.winning = attack.winning || ownPattern.winning;
+    defense.winning = defense.winning || opposingPattern.winning;
+    attack.winningReplies = Math.min(2, attack.winningReplies + ownPattern.winningReplies);
+    defense.winningReplies = Math.min(2, defense.winningReplies + opposingPattern.winningReplies);
+    attack.liveThreeExtensions = Math.min(2,
+      attack.liveThreeExtensions + ownPattern.liveThreeExtensions);
+    defense.liveThreeExtensions = Math.min(2,
+      defense.liveThreeExtensions + opposingPattern.liveThreeExtensions);
+  }
+
+  return { attack, defense };
+}
+
+function mctsPatternScore(pattern, defending) {
+  if (pattern.winning) return defending ? 50000 : 100000;
+  if (pattern.winningReplies === 2) return defending ? 18000 : 20000;
+  if (pattern.winningReplies === 1) return defending ? 4500 : 5000;
+  return pattern.liveThreeExtensions * (defending ? 1200 : 1000);
+}
+
 /**
  * 只搜索已有棋子附近的空位，大幅减少 15×15 棋盘的无效分支。
  * 同时保留中心点，避免开局时搜索到边角。
  */
-function mctsCandidateMoves(board, size, player, maxCandidates) {
+function mctsCandidateMoves(board, size, player, maxCandidates, analyzePatterns = true) {
   const occupied = [];
   for (let row = 0; row < size; row++) {
     for (let col = 0; col < size; col++) {
@@ -120,7 +213,7 @@ function mctsCandidateMoves(board, size, player, maxCandidates) {
     col: index % size,
   }));
 
-  // 优先级：立即获胜 > 必须拦截 > 邻近棋子多 > 靠近中心。
+  // 棋形与防点优先，周围棋子数和中心距离只用于普通着法的排序。
   const opponent = mctsOpponent(player);
   const scored = moves.map(move => {
     let nearby = 0;
@@ -137,14 +230,26 @@ function mctsCandidateMoves(board, size, player, maxCandidates) {
       }
     }
     const centerDistance = Math.abs(move.row - center) + Math.abs(move.col - center);
-    const winning = mctsIsWinningMove(board, size, move, player);
-    const blocking = !winning && mctsIsWinningMove(board, size, move, opponent);
+    let winning;
+    let blocking;
+    let tacticalScore;
+    if (analyzePatterns) {
+      const { attack, defense } = mctsMovePatterns(board, size, move, player);
+      winning = attack.winning;
+      blocking = !winning && defense.winning;
+      tacticalScore = mctsPatternScore(attack, false) +
+        (winning ? 0 : mctsPatternScore(defense, true));
+    } else {
+      // 较深的随机模拟用轻量评分，保留一步胜负判断以增加模拟次数。
+      winning = mctsIsWinningMove(board, size, move, player);
+      blocking = !winning && mctsIsWinningMove(board, size, move, opponent);
+      tacticalScore = (winning ? 100000 : 0) + (blocking ? 50000 : 0);
+    }
     return {
       ...move,
       winning,
       blocking,
-      score: (winning ? 100000 : 0) + (blocking ? 50000 : 0) +
-        nearby * 12 + opponentNearby * 8 - centerDistance,
+      score: tacticalScore + nearby * 12 + opponentNearby * 8 - centerDistance,
     };
   });
 
@@ -177,7 +282,7 @@ function mctsWinningRepliesNear(board, size, move, player) {
 
 // 对手一步之后若有两个不同的成五点，下一回合便无法同时拦住。
 function mctsDoubleThreatMoves(board, size, player) {
-  const moves = mctsCandidateMoves(board, size, player, size * size);
+  const moves = mctsCandidateMoves(board, size, player, size * size, false);
   return moves.filter(move => {
     const index = mctsIndex(size, move.row, move.col);
     board[index] = player;
@@ -384,7 +489,10 @@ class MCTSAIPlayer extends AIPlayer {
     const board = node.board.slice();
     let player = node.playerToMove;
     for (let depth = 0; depth < this.settings.rolloutDepth; depth++) {
-      const moves = mctsCandidateMoves(board, node.size, player, this.settings.maxCandidates);
+      const moves = mctsCandidateMoves(
+        board, node.size, player, this.settings.maxCandidates,
+        depth < MCTS_PATTERN_ROLLOUT_PLIES,
+      );
       if (moves.length === 0) return 0.5;
 
       const winningMoves = mctsImmediateMoves(board, node.size, moves, player);
