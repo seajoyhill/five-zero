@@ -264,6 +264,51 @@ function mctsCandidateMoves(board, size, player, maxCandidates) {
   return scored.slice(0, Math.max(1, maxCandidates));
 }
 
+// 后手前两手采用保守的开局策略，避免稀疏局面中少量随机模拟压过基本布局。
+// 只用于己方 0/1 子、对方 1/2 子的局面；进入战术阶段后交回完整搜索。
+function mctsOpeningMove(board, size, moves, player) {
+  const opponent = mctsOpponent(player);
+  const opposing = [];
+  let ownCount = 0;
+  for (let index = 0; index < board.length; index++) {
+    if (board[index] === player) ownCount++;
+    else if (board[index] === opponent) opposing.push(index);
+  }
+  if (ownCount === 0 && opposing.length === 1) {
+    const row = Math.floor(opposing[0] / size);
+    const col = opposing[0] % size;
+    return moves.find(move => Math.max(Math.abs(move.row - row), Math.abs(move.col - col)) === 1);
+  }
+  if (ownCount !== 1 || opposing.length !== 2) return null;
+
+  let best = null;
+  let bestThreat = Infinity;
+  let bestDevelopment = -Infinity;
+  for (const move of moves) {
+    const index = mctsIndex(size, move.row, move.col);
+    board[index] = player;
+    let threat = 0;
+    let development = 0;
+    try {
+      // 实际落子后重新评估：堵在活二的延伸点上，未必真正阻止了另一端活三。
+      const replies = mctsCandidateMoves(board, size, opponent, size * size);
+      for (const reply of replies) {
+        threat = Math.max(threat, mctsPatternScore(reply.attack, false));
+        development = Math.max(development, mctsPatternScore(reply.defense, false));
+      }
+    } finally {
+      board[index] = EMPTY;
+    }
+    // 先减少黑棋下一手的最大威胁，同等防守效果下再发展自己的棋形。
+    if (threat < bestThreat || (threat === bestThreat && development > bestDevelopment)) {
+      best = move;
+      bestThreat = threat;
+      bestDevelopment = development;
+    }
+  }
+  return best;
+}
+
 // 只检查与刚落下的棋子同线的空位；新出现的成五点必然经过这枚棋子。
 function mctsWinningRepliesNear(board, size, move, player) {
   const winning = new Set();
@@ -464,6 +509,8 @@ class MCTSAIPlayer extends AIPlayer {
     const fork = rootMoves.find(move => move.attack.winningReplies >= 2);
     if (fork) return finish(fork);
     if (rootMoves.length === 1) return finish(rootMoves[0]);
+    const openingMove = mctsOpeningMove(board, size, rootMoves, this.playerColor);
+    if (openingMove) return finish(openingMove);
     let searchMoves = rootMoves;
     const doubleThreats = rootMoves.filter(move => move.defense.winningReplies >= 2);
     if (doubleThreats.length > 0) {

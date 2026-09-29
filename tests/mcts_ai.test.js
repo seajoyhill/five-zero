@@ -14,6 +14,7 @@ function loadAI(overrides = {}) {
     MCTSAIPlayer: vm.runInContext('MCTSAIPlayer', context),
     mctsCandidateMoves: vm.runInContext('mctsCandidateMoves', context),
     mctsMovePatterns: vm.runInContext('mctsMovePatterns', context),
+    mctsOpeningMove: vm.runInContext('mctsOpeningMove', context),
     MCTSNode: vm.runInContext('MCTSNode', context),
     MCTSForcingSearch: vm.runInContext('MCTSForcingSearch', context),
     mctsPositionValue: vm.runInContext('mctsPositionValue', context),
@@ -296,4 +297,73 @@ test('winning-reply patterns distinguish a single broken four from two crossing 
   place(board, ['I4', 'I5', 'I7'], BLACK);
   pattern = mctsMovePatterns(board.grid.flat(), 15, { row: 7, col: 8 }, BLACK).attack;
   assert.equal(pattern.winningReplies, 2); // Also I6; distinct from G8.
+});
+
+test('first reply stays adjacent to the opening stone, including edges and corners', async () => {
+  const math = Object.create(Math);
+  math.random = () => 0.99;
+  const { Board, MCTSAIPlayer, BLACK, WHITE } = loadAI({ Math: math });
+  for (const strength of ['easy', 'balanced', 'strong', 'expert']) {
+    for (const [row, col] of [[7, 7], [0, 0], [0, 14], [14, 0], [14, 14], [0, 7]]) {
+      const board = new Board(15);
+      board.placeStone(row, col, BLACK);
+      const ai = new MCTSAIPlayer(WHITE, { strength, thinkTimeMs: 50 });
+      const move = await ai.getMove(board.getState());
+      assert.equal(board.isValidMove(move.row, move.col), true);
+      assert.equal(Math.max(Math.abs(move.row - row), Math.abs(move.col - col)), 1);
+    }
+  }
+});
+
+test('the screenshot second reply prevents an open three instead of extending I10', async () => {
+  const { Board, MCTSAIPlayer, mctsCandidateMoves, BLACK, WHITE } = loadAI();
+  const board = new Board(15);
+  place(board, ['H8', 'I7'], BLACK);
+  place(board, ['I10'], WHITE);
+  const state = board.getState();
+  const before = JSON.stringify(state);
+  const ai = new MCTSAIPlayer(WHITE, { strength: 'balanced', thinkTimeMs: 50 });
+  const move = await ai.getMove(state);
+  assert.ok(['G9', 'J6'].includes(notation(move)), notation(move));
+  assert.equal(JSON.stringify(state), before);
+  board.placeStone(move.row, move.col, WHITE);
+  const replies = mctsCandidateMoves(board.grid.flat(), 15, BLACK, 225);
+  assert.equal(replies.some(reply => reply.attack.liveThreeDirections > 0), false);
+});
+
+test('second-reply defense handles straight and broken twos in every direction', async () => {
+  const { Board, MCTSAIPlayer, mctsCandidateMoves, BLACK, WHITE } = loadAI();
+  for (const [dr, dc] of [[0, 1], [1, 0], [1, 1], [1, -1]]) {
+    for (const gap of [1, 2]) {
+      const board = new Board(15);
+      board.placeStone(7, 7, BLACK);
+      board.placeStone(7 + dr * gap, 7 + dc * gap, BLACK);
+      board.placeStone(1, 1, WHITE);
+      assert.ok(mctsCandidateMoves(board.grid.flat(), 15, BLACK, 225)
+        .some(reply => reply.attack.liveThreeDirections > 0));
+      const move = await new MCTSAIPlayer(WHITE, { thinkTimeMs: 50 }).getMove(board.getState());
+      assert.equal(board.placeStone(move.row, move.col, WHITE), true);
+      assert.equal(mctsCandidateMoves(board.grid.flat(), 15, BLACK, 225)
+        .some(reply => reply.attack.liveThreeDirections > 0), false,
+      `direction ${dr},${dc}, gap ${gap}: ${notation(move)}`);
+    }
+  }
+});
+
+test('the screenshot third reply still blocks either end of the diagonal three', async () => {
+  const { Board, MCTSAIPlayer, BLACK, WHITE } = loadAI();
+  const board = new Board(15);
+  place(board, ['H8', 'I7', 'J6'], BLACK);
+  place(board, ['I10', 'I11'], WHITE);
+  const move = await new MCTSAIPlayer(WHITE, { thinkTimeMs: 50 }).getMove(board.getState());
+  assert.ok(['G9', 'K5'].includes(notation(move)), notation(move));
+});
+
+test('opening policy leaves later positions to tactical and Monte Carlo search', () => {
+  const { Board, mctsOpeningMove, mctsCandidateMoves, BLACK, WHITE } = loadAI();
+  const board = new Board(15);
+  place(board, ['H8', 'I7', 'J6'], BLACK);
+  place(board, ['I10', 'I11'], WHITE);
+  const flat = board.grid.flat();
+  assert.equal(mctsOpeningMove(flat, 15, mctsCandidateMoves(flat, 15, WHITE, 225), WHITE), null);
 });
