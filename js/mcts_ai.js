@@ -285,7 +285,11 @@ class MCTSAIPlayer extends AIPlayer {
     let bestScore = -Infinity;
     for (const child of node.children) {
       if (child.visits === 0) return child;
-      const exploitation = child.wins / child.visits;
+      // wins 始终从 AI 视角统计；轮到对手时应偏向 AI 胜率较低的分支。
+      const rootWinRate = child.wins / child.visits;
+      const exploitation = node.playerToMove === this.playerColor
+        ? rootWinRate
+        : 1 - rootWinRate;
       const explorationBonus = exploration * Math.sqrt(Math.log(Math.max(1, node.visits)) / child.visits);
       const score = exploitation + explorationBonus;
       if (score > bestScore) {
